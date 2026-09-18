@@ -1,0 +1,13 @@
+__pycache__/
+
+.venv/
+venv/
+
+.env
+
+database/
+benchmark.db
+
+respostas.py
+
+base/
