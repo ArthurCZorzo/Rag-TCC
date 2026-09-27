@@ -12,3 +12,6 @@ benchmark.db
 respostas.py
 
 base/
+docs/
+
+chunks_gerados.txt

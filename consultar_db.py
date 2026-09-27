@@ -24,7 +24,8 @@ def criar_banco_benchmark():
             total_tokens INTEGER,
             tempo_inicial REAL,
             tempo_final REAL,
-            tempo_total REAL
+            tempo_total REAL,
+            versao INTEGER
         )
     """)
 
@@ -94,7 +95,7 @@ def consultar_modelo(contexto, pergunta, client, modelo):
         
 def inicializar_sistema_busca(diretorio_banco: str = "database"):
     embeddings = HuggingFaceEmbeddings(
-        model_name="intfloat/multilingual-e5-small"
+        model_name="intfloat/multilingual-e5-large"
     )
     
     db = Chroma(
@@ -105,7 +106,7 @@ def inicializar_sistema_busca(diretorio_banco: str = "database"):
     return db
 
 def buscar_top_chunks(banco_dados: Chroma, pergunta: str, k: int = 5):
-    resultados = banco_dados.similarity_search_with_score(pergunta, k=k)
+    resultados = banco_dados.similarity_search(pergunta, k=k)
     return resultados
 
 def tratar_resposta_sabia(pergunta, resposta_modelo, tempo_inicial, tempo_final, tempo_total):
@@ -143,6 +144,7 @@ def tratar_resposta_sabia(pergunta, resposta_modelo, tempo_inicial, tempo_final,
     print("*"*20)
     print(f"Custo: R$ {custo}")
     print("*"*20)
+    #salvar_resposta_banco(resposta)
     return resposta
 
 def tratar_resposta_openrouter(pergunta, resposta_modelo, tempo_inicial, tempo_final, tempo_total):
@@ -177,7 +179,14 @@ def tratar_resposta_openrouter(pergunta, resposta_modelo, tempo_inicial, tempo_f
     print("*"*20)
     print(f"Custo: US$ {resposta_modelo.usage.cost}") # como eu vou converter de dolares para reais?
     print("*"*20)
+    #salvar_resposta_banco(resposta)
     return resposta
+
+def salvar_resposta_banco(resposta):
+    with conn:
+        cursor.execute("INSERT INTO respostas (modelo, pergunta_usuario, resposta_modelo, token_input, token_output, total_tokens, tempo_inicial, tempo_final, tempo_total, versao) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ", 
+            (resposta.modelo, resposta.pergunta_usuario, resposta.resposta_modelo, resposta.token_input, resposta.token_output, 
+             resposta.total_tokens, resposta.tempo_inicial, resposta.tempo_final, resposta.tempo_total, 1))
 
 if __name__ == "__main__":
     criar_banco_benchmark()
@@ -196,7 +205,13 @@ if __name__ == "__main__":
         else:
             chunks_encontrados = buscar_top_chunks(db_conectado, pergunta, k=5)
 
-            textos_limpos = []
+            for doc in chunks_encontrados:
+                print("*"*20)
+                print("Chunk: ")
+                print(doc.page_content)
+                print("*"*20)
+
+            """ textos_limpos = []
             for doc, score in chunks_encontrados:
                 texto_sem_quebras = doc.page_content.replace("\n", " ")
                 texto_ajustado = " ".join(texto_sem_quebras.split())
@@ -213,10 +228,4 @@ if __name__ == "__main__":
             if modelo == "sabia-4":
                 tratar_resposta_sabia(pergunta, resposta_modelo, tempo_inicial, tempo_final, tempo_total)
             else:
-                tratar_resposta_openrouter(pergunta, resposta_modelo, tempo_inicial, tempo_final, tempo_total)
-
-            #with conn:
-            #    cursor.execute("INSERT INTO respostas (modelo, pergunta_usuario, resposta_modelo, token_input, token_output, total_tokens, tempo_inicial, tempo_final, tempo_total) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ", 
-            #                   (resposta_modelo.model, pergunta, resposta_modelo.output[0].content[0].text, 
-            #                    resposta_modelo.usage.input_tokens, resposta_modelo.usage.output_tokens, resposta_modelo.usage.total_tokens,
-            #                    tempo_inicial, tempo_final, tempo_total))
+                tratar_resposta_openrouter(pergunta, resposta_modelo, tempo_inicial, tempo_final, tempo_total) """
