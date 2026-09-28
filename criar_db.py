@@ -1,13 +1,11 @@
 import os
+import shutil
 
 from langchain_community.document_loaders import DirectoryLoader, TextLoader
 from langchain_docling import DoclingLoader
 from langchain_docling.loader import ExportType
-from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_text_splitters import MarkdownHeaderTextSplitter
-#from langchain_chroma.vectorstores import Chroma
+from langchain_text_splitters import RecursiveCharacterTextSplitter, MarkdownHeaderTextSplitter
 from langchain_community.vectorstores import Chroma
-#from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_huggingface import HuggingFaceEmbeddings
 from dotenv import load_dotenv
 
@@ -44,18 +42,7 @@ def salvar_chunks_em_arquivo(chunks, caminho_arquivo):
 def verificar_markdown(arquivo):
     return arquivo.endswith("md")
 
-""" def carregar_documentos():
-    carregador = DirectoryLoader(
-        PASTA_BASE, 
-        glob="*.md",
-        loader_cls=TextLoader,
-        loader_kwargs={"encoding": "utf-8"}
-        )
-    documentos = carregador.load()
-    return documentos """
-
 def carregar_documentos():
-
     documentos = []
 
     for root, _, files in os.walk(PASTA_BASE):
@@ -65,37 +52,19 @@ def carregar_documentos():
             if os.path.isfile(caminho_arquivo) and verificar_markdown(filename):
                 try:
                     carregador = DoclingLoader(
-                            file_path=caminho_arquivo,
-                            export_type=ExportType.MARKDOWN
+                        file_path=caminho_arquivo,
+                        export_type=ExportType.MARKDOWN
                     )
-                    documento = carregador.load()
-                    documento[0].metadata["source"] = filename
-                    documentos.append(documento)
+                    docs_carregados = carregador.load()
+                    for doc in docs_carregados:
+                        doc.metadata["source"] = filename
+                        documentos.append(doc)
                 except Exception as ex:
                     print(f"Erro ao carregar documento {filename}, erro: {ex}")
 
     return documentos
 
 def criar_chunks(documentos):
-    chunks_documentos = []
-    separador = RecursiveCharacterTextSplitter(
-        chunk_size=2000,
-        chunk_overlap=400,
-        length_function=len,
-        add_start_index=True
-    )
-    
-    for documento in documentos:
-        chunks = separador.split_documents(documento)
-
-        for chunk in chunks:
-            chunk.page_content = "Conteúdo do documento: " + documento[0].metadata["source"] + ": " + chunk.page_content
-
-        chunks_documentos.extend(chunks)
-
-    return chunks_documentos
-
-""" def criar_chunks(documentos):
     headers_to_split_on = [
         ("#", "Header 1"),
         ("##", "Header 2"),
@@ -107,33 +76,62 @@ def criar_chunks(documentos):
         strip_headers=False
     )
 
+    separador_recursivo = RecursiveCharacterTextSplitter(
+        chunk_size=1200,
+        chunk_overlap=200,
+        length_function=len,
+        add_start_index=True
+    )
+
     chunks_finais = []
 
     for doc in documentos:
+        # Fatiar primeiramente pela estrutura do Markdown (headers)
         chunks_markdown = separador_md.split_text(doc.page_content)
         
-        for chunk in chunks_markdown:
-            chunk.metadata.update(doc.metadata)
+        for chunk_md in chunks_markdown:
+            chunk_md.metadata.update(doc.metadata)
 
-        separador_recursivo = RecursiveCharacterTextSplitter(
-            chunk_size=1000,
-            chunk_overlap=200
-        )
+        # Aplica o splitter recursivo caso as seções sejam grandes
         sub_chunks = separador_recursivo.split_documents(chunks_markdown)
-        chunks_finais.extend(sub_chunks)
 
-    return chunks_finais """
+        for chunk in sub_chunks:
+            source = chunk.metadata.get("source", "")
+            
+            # Recupera os títulos das seções para contextualizar o chunk
+            headers = [
+                chunk.metadata.get("Header 1"),
+                chunk.metadata.get("Header 2"),
+                chunk.metadata.get("Header 3")
+            ]
+            contexto_headers = " > ".join([h for h in headers if h])
+            cabecalho_contexto = f"Documento: {source}"
+            if contexto_headers:
+                cabecalho_contexto += f" | Seção: {contexto_headers}"
+
+            # Adiciona o prefixo exigido pelo modelo intfloat/multilingual-e5-large + o contexto da seção
+            chunk.page_content = f"passage: {cabecalho_contexto}\n{chunk.page_content}"
+            chunks_finais.append(chunk)
+
+    return chunks_finais
 
 def vetorizar_chunks(chunks):
+    pasta_db = "database"
+    # Garante que a base anterior seja removida para evitar mistura de chunks antigos
+    if os.path.exists(pasta_db):
+        shutil.rmtree(pasta_db)
+        print("Banco de dados anterior removido.")
+
     embeddings = HuggingFaceEmbeddings(
         model_name="intfloat/multilingual-e5-large"
     )
     db = Chroma.from_documents(
         chunks, 
         embedding=embeddings, 
-        persist_directory="database"
+        persist_directory=pasta_db
     )
     db.persist()
-    print("Banco de dados criado!")
+    print("Novo banco de dados criado com sucesso!")
 
 criar_db()
+

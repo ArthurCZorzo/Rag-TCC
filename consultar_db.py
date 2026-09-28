@@ -106,7 +106,9 @@ def inicializar_sistema_busca(diretorio_banco: str = "database"):
     return db
 
 def buscar_top_chunks(banco_dados: Chroma, pergunta: str, k: int = 5):
-    resultados = banco_dados.similarity_search(pergunta, k=k)
+    # O modelo intfloat/multilingual-e5-large exige o prefixo 'query: ' nas buscas
+    pergunta_formatada = f"query: {pergunta}"
+    resultados = banco_dados.similarity_search(pergunta_formatada, k=k)
     return resultados
 
 def tratar_resposta_sabia(pergunta, resposta_modelo, tempo_inicial, tempo_final, tempo_total):
