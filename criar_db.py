@@ -42,6 +42,17 @@ def salvar_chunks_em_arquivo(chunks, caminho_arquivo):
 def verificar_markdown(arquivo):
     return arquivo.endswith("md")
 
+import re
+
+def normalizar_headers_markdown(texto: str) -> str:
+    """ 
+    Transforma itens numerados de seções (ex: '- 23.Objetivos do curso:' ou '23. Objetivos do curso:') 
+    em cabeçalhos de Markdown (## 23. Objetivos do curso:) para que sejam reconhecidos pelo Splitter.
+    """
+    # Transforma linhas como '- 23.Objetivos do curso:' em '## 23. Objetivos do curso:'
+    texto = re.sub(r'^(?:-\s*)?(\d{1,2}\.\s*[A-ZÀ-Ú].*?:)', r'## \1', texto, flags=re.MULTILINE)
+    return texto
+
 def carregar_documentos():
     documentos = []
 
@@ -58,11 +69,19 @@ def carregar_documentos():
                     docs_carregados = carregador.load()
                     for doc in docs_carregados:
                         doc.metadata["source"] = filename
+                        doc.page_content = normalizar_headers_markdown(doc.page_content)
                         documentos.append(doc)
                 except Exception as ex:
                     print(f"Erro ao carregar documento {filename}, erro: {ex}")
 
     return documentos
+
+def extrair_nome_disciplina(texto_chunk: str) -> str:
+    """ Procura no conteúdo do chunk se existe uma disciplina associada (ex: Unidade Curricular / Disciplina: Planejamento Estratégico) """
+    match = re.search(r'Unidade\s*Curricular\s*/\s*Disciplina:\s*([^\n|]+)', texto_chunk, re.IGNORECASE)
+    if match:
+        return match.group(1).strip()
+    return ""
 
 def criar_chunks(documentos):
     headers_to_split_on = [
@@ -98,22 +117,27 @@ def criar_chunks(documentos):
         for chunk in sub_chunks:
             source = chunk.metadata.get("source", "")
             
-            # Recupera os títulos das seções para contextualizar o chunk
-            headers = [
-                chunk.metadata.get("Header 1"),
-                chunk.metadata.get("Header 2"),
-                chunk.metadata.get("Header 3")
-            ]
-            contexto_headers = " > ".join([h for h in headers if h])
-            cabecalho_contexto = f"Documento: {source}"
-            if contexto_headers:
-                cabecalho_contexto += f" | Seção: {contexto_headers}"
+            # Recupera os títulos das seções
+            h1 = chunk.metadata.get("Header 1", "")
+            h2 = chunk.metadata.get("Header 2", "")
+            h3 = chunk.metadata.get("Header 3", "")
 
-            # Adiciona o prefixo exigido pelo modelo intfloat/multilingual-e5-large + o contexto da seção
+            # Tenta extrair disciplina se for uma ementa de disciplina
+            disciplina = extrair_nome_disciplina(chunk.page_content)
+            
+            headers_validos = [h for h in [h1, h2, h3] if h]
+            contexto_secao = " > ".join(headers_validos) if headers_validos else "Geral"
+
+            cabecalho_contexto = f"Documento: {source} | Seção: {contexto_secao}"
+            if disciplina:
+                cabecalho_contexto += f" | Disciplina: {disciplina}"
+
+            # Adiciona o prefixo exigido pelo modelo intfloat/multilingual-e5-large + contexto enriquecido
             chunk.page_content = f"passage: {cabecalho_contexto}\n{chunk.page_content}"
             chunks_finais.append(chunk)
 
     return chunks_finais
+
 
 def vetorizar_chunks(chunks):
     pasta_db = "database"
