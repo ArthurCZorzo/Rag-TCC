@@ -15,3 +15,8 @@ base/
 docs/
 
 chunks_gerados.txt
+
+notas modelos.txt
+pergunta_respostas.csv
+respostas_chunks_out.csv
+respostas_modelo.csv

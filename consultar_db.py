@@ -25,7 +25,7 @@ def criar_banco_benchmark():
             tempo_inicial REAL,
             tempo_final REAL,
             tempo_total REAL,
-            versao INTEGER
+            chunks TEXT NOT NULL
         )
     """)
 
@@ -42,33 +42,33 @@ def criar_client(modelo):
         )
 
 def escolher_modelo():
-    print("1 - GPT-4.1 Mini")
-    print("2 - Gemini 2.5 Flash")
-    print("3 - Claude Sonnet 4")
-    print("4 - DeepSeek Chat")
+    print("1 - gpt-5.6-luna")
+    print("2 - gemini-3.7-flash")
+    print("3 - claude-sonnet-5")
+    print("4 - deepseek-v4.1-flash")
     print("5 - MaritacaAI Sabia 4")
     
     opcao = input("\nEscolha um modelo: ")
     
     if opcao == "1":
-        return "openai/gpt-4.1-mini"
+        return "openai/gpt-5.6-luna" #1.05 M contexto, $0.20/M input tokens, $1.20/M output tokens
     elif opcao == "2":
-        return "google/gemini-2.5-flash"
+        return "google/gemini-3.7-flash" #1.05 M contexto, $0.75/M input tokens, $3.75/M output tokens
     elif opcao == "3":
-        return "anthropic/claude-sonnet-4"
+        return "anthropic/claude-sonnet-5" #1 M contexto, $2/M input tokens, $10/M output tokens
     elif opcao == "4":
-        return "deepseek/deepseek-chat"
+        return "deepseek/deepseek-v4.1-flash" #1.05 M contexto, $0.0198/M input tokens, #0.396/M output tokens
     elif opcao == "5":
         return "sabia-4"
     else:
         print("\nOpção inválida.")
-        return "openai/gpt-4.1-mini"
+        return "openai/gpt-5.6-luna"
     
 
 def consultar_modelo(contexto, pergunta, client, modelo):
   prompt = f"""
     Prompt do sistema:
-    Você é um assistente especializado em responder perguntas com base em documentos do Instituto Federal de Santa Catarina Câmpus Caçador. Sua tarefa é utilizar o contexto e seu conhecimento para auxiliar o usuário solucionar sua dúvida. Por favor, responda listando todas as informações relevantes encontradas no contexto de forma sucinta e profissional. Se não souber, diga "Não sei".
+    Você é um assistente especializado em responder perguntas com base em documentos do Instituto Federal de Santa Catarina Câmpus Caçador. Sua tarefa é utilizar o contexto para auxiliar o usuário solucionar sua dúvida. Responda utilizando somente as informações passadas no contexto. Por favor, responda listando todas as informações relevantes encontradas no contexto de forma sucinta e profissional. Se não souber, diga "Não sei, entre em contato com a Coordenação do Curso.".
     
     Prompt do usuário:
     Contexto:
@@ -88,7 +88,7 @@ def consultar_modelo(contexto, pergunta, client, modelo):
             messages=[
                 {
                     "role": "user",
-                    "content": pergunta
+                    "content": prompt
                 }
             ]
         )
@@ -111,7 +111,7 @@ def buscar_top_chunks(banco_dados: Chroma, pergunta: str, k: int = 5):
     resultados = banco_dados.similarity_search(pergunta_formatada, k=k)
     return resultados
 
-def tratar_resposta_sabia(pergunta, resposta_modelo, tempo_inicial, tempo_final, tempo_total):
+def tratar_resposta_sabia(pergunta, resposta_modelo, tempo_inicial, tempo_final, tempo_total, chunks):
     resposta = Resposta(
         resposta_modelo.model,
         pergunta,
@@ -126,30 +126,11 @@ def tratar_resposta_sabia(pergunta, resposta_modelo, tempo_inicial, tempo_final,
 
     custo = (resposta.token_input * 5.00 / 1000000) + (resposta.token_output * 20 / 1000000)
 
-    print("*"*20)
-    print(f"Pergunta: {resposta.pergunta_usuario}")
-    print("*"*20)
-    print("Reposta do modelo: ")
     print(resposta.resposta_modelo)
-    print("*"*20)
-    print(f"Modelo: {resposta.modelo}")
-    print("*"*20)
-    print("Tokens:")
-    print(f"Input tokens: {resposta.token_input}")
-    print(f"Output tokens: {resposta.token_output}")
-    print(f"Total tokens: {resposta.total_tokens}")
-    print("*"*20)
-    print("Tempo: ")
-    print(f"Tempo Inicial: {resposta.tempo_inicial}")
-    print(f"Tempo Final: {resposta.tempo_final}")
-    print(f"Tempo Total: {resposta.tempo_total}")
-    print("*"*20)
-    print(f"Custo: R$ {custo}")
-    print("*"*20)
-    #salvar_resposta_banco(resposta)
+    salvar_resposta_banco(resposta, chunks)
     return resposta
 
-def tratar_resposta_openrouter(pergunta, resposta_modelo, tempo_inicial, tempo_final, tempo_total):
+def tratar_resposta_openrouter(pergunta, resposta_modelo, tempo_inicial, tempo_final, tempo_total, chunks):
     resposta = Resposta(
         resposta_modelo.model,
         pergunta,
@@ -161,34 +142,16 @@ def tratar_resposta_openrouter(pergunta, resposta_modelo, tempo_inicial, tempo_f
         tempo_final,
         tempo_total
     )
-    print("*"*20)
-    print(f"Pergunta: {resposta.pergunta_usuario}")
-    print("*"*20)
-    print("Reposta do modelo: ")
+
     print(resposta.resposta_modelo)
-    print("*"*20)
-    print(f"Modelo: {resposta.modelo}")
-    print("*"*20)
-    print("Tokens:")
-    print(f"Input tokens: {resposta.token_input}")
-    print(f"Output tokens: {resposta.token_output}")
-    print(f"Total tokens: {resposta.total_tokens}")
-    print("*"*20)
-    print("Tempo: ")
-    print(f"Tempo Inicial: {resposta.tempo_inicial}")
-    print(f"Tempo Final: {resposta.tempo_final}")
-    print(f"Tempo Total: {resposta.tempo_total}")
-    print("*"*20)
-    print(f"Custo: US$ {resposta_modelo.usage.cost}") # como eu vou converter de dolares para reais?
-    print("*"*20)
-    #salvar_resposta_banco(resposta)
+    salvar_resposta_banco(resposta, chunks)
     return resposta
 
-def salvar_resposta_banco(resposta):
+def salvar_resposta_banco(resposta, chunks):
     with conn:
-        cursor.execute("INSERT INTO respostas (modelo, pergunta_usuario, resposta_modelo, token_input, token_output, total_tokens, tempo_inicial, tempo_final, tempo_total, versao) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ", 
+        cursor.execute("INSERT INTO respostas (modelo, pergunta_usuario, resposta_modelo, token_input, token_output, total_tokens, tempo_inicial, tempo_final, tempo_total, chunks) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ", 
             (resposta.modelo, resposta.pergunta_usuario, resposta.resposta_modelo, resposta.token_input, resposta.token_output, 
-             resposta.total_tokens, resposta.tempo_inicial, resposta.tempo_final, resposta.tempo_total, 1))
+             resposta.total_tokens, resposta.tempo_inicial, resposta.tempo_final, resposta.tempo_total, chunks))
 
 if __name__ == "__main__":
     criar_banco_benchmark()
@@ -207,14 +170,8 @@ if __name__ == "__main__":
         else:
             chunks_encontrados = buscar_top_chunks(db_conectado, pergunta, k=5)
 
+            textos_limpos = []
             for doc in chunks_encontrados:
-                print("*"*20)
-                print("Chunk: ")
-                print(doc.page_content)
-                print("*"*20)
-
-            """ textos_limpos = []
-            for doc, score in chunks_encontrados:
                 texto_sem_quebras = doc.page_content.replace("\n", " ")
                 texto_ajustado = " ".join(texto_sem_quebras.split())
                 textos_limpos.append(texto_ajustado)
@@ -227,7 +184,9 @@ if __name__ == "__main__":
 
             tempo_total = tempo_final - tempo_inicial
 
+            #print(f"Resposta do Modelo: {resposta_modelo}")
+
             if modelo == "sabia-4":
-                tratar_resposta_sabia(pergunta, resposta_modelo, tempo_inicial, tempo_final, tempo_total)
+                tratar_resposta_sabia(pergunta, resposta_modelo, tempo_inicial, tempo_final, tempo_total, texto_consolidado)
             else:
-                tratar_resposta_openrouter(pergunta, resposta_modelo, tempo_inicial, tempo_final, tempo_total) """
+                tratar_resposta_openrouter(pergunta, resposta_modelo, tempo_inicial, tempo_final, tempo_total, texto_consolidado)
