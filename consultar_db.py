@@ -68,12 +68,18 @@ def escolher_modelo():
 def consultar_modelo(contexto, pergunta, client, modelo):
   prompt = f"""
     Prompt do sistema:
-    Você é um assistente especializado em responder perguntas com base em documentos do Instituto Federal de Santa Catarina Câmpus Caçador. Sua tarefa é utilizar o contexto para auxiliar o usuário solucionar sua dúvida. Responda utilizando somente as informações passadas no contexto. Por favor, responda listando todas as informações relevantes encontradas no contexto de forma sucinta e profissional. Se não souber, diga "Não sei, entre em contato com a Coordenação do Curso.".
-    
-    Prompt do usuário:
-    Contexto:
+    Você é um assistente acadêmico institucional. Sua função é responder às dúvidas dos estudantes com clareza e precisão.
+
+    Instruções:
+    1. Priorize as informações do [CONTEXTO] fornecido para responder.
+    2. Você pode complementar a resposta com seu conhecimento geral apenas se for para esclarecer ou enriquecer o contexto, sem contradizê-lo.
+    3. Se a informação não estiver disponível no [CONTEXTO] e você não tiver certeza absoluta, NÃO invente nada. Responda claramente que não possui essa informação e oriente o estudante a procurar a coordenação do curso.
+    4. Mantenha um tom cortês, objetivo e institucional.
+
+    [CONTEXTO]
     {contexto}
-    Pergunta:
+
+    [PERGUNTA DO ESTUDANTE]
     {pergunta}
     """.strip()
 
