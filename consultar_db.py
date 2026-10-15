@@ -1,5 +1,9 @@
 from langchain_chroma import Chroma
 from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_openai import ChatOpenAI
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+from langchain_classic.chains import create_history_aware_retriever
+from langchain_core.messages import HumanMessage, AIMessage
 from dotenv import load_dotenv
 import openai
 import sqlite3
@@ -25,20 +29,25 @@ def criar_banco_benchmark():
             tempo_inicial REAL,
             tempo_final REAL,
             tempo_total REAL,
-            chunks TEXT NOT NULL
+            chunks TEXT NOT NULL,
+            prompt TEXT NOT NULL
         )
     """)
 
 def criar_client(modelo):
     if modelo == "sabia-4":
-        return openai.OpenAI(
+        return ChatOpenAI(
+            model=modelo,
             api_key=os.getenv("MARITACA_AI_API_KEY"),
             base_url="https://chat.maritaca.ai/api",
+            temperature=0.2
         )
     else:
-        return openai.OpenAI(
+        return ChatOpenAI(
+            model=modelo,
             api_key=os.getenv("OPENROUTER_API_KEY"),
-            base_url="https://openrouter.ai/api/v1"
+            base_url="https://openrouter.ai/api/v1",
+            temperature=0.2
         )
 
 def escolher_modelo():
@@ -63,41 +72,52 @@ def escolher_modelo():
     else:
         print("\nOpção inválida.")
         return "openai/gpt-5.6-luna"
-    
 
-def consultar_modelo(contexto, pergunta, client, modelo):
-  prompt = f"""
+def reformular_pergunta():
+    prompt_reformulacao = ChatPromptTemplate.from_messages([
+        ("system", (
+            "Você é um assistente encarregado de reformular perguntas de estudantes para um sistema de busca em documentos acadêmicos.\n"
+            "Dada a conversa anterior e a última pergunta do usuário, reformule a pergunta para torná-la totalmente autônoma, "
+            "específica e autocontida.\n\n"
+            "Diretrizes:\n"
+            "- Se a pergunta contiver elipses ou pronomes (ex: 'e a carga horária?', 'onde ele dá aula?', 'qual a sala?'), "
+            "identifique o sujeito da conversa anterior (disciplina, professor, edital, fase) e inclua-o explicitamente na pergunta reformulada.\n"
+            "- Exemplo: se o histórico fala sobre 'Algoritmos e Programação II' e o usuário pergunta 'e a carga horaria?', "
+            "reformule para: 'Qual é a carga horária da disciplina de Algoritmos e Programação II?'.\n"
+            "- NÃO responda à pergunta, retorne APENAS a pergunta reformulada."
+        )),
+        MessagesPlaceholder("chat_history"),
+        ("human", "{input}"),
+    ])
+
+    return prompt_reformulacao
+
+def consultar_modelo(contexto, pergunta, historico_chat, client):
+    historico_texto = ""
+    if historico_chat:
+        historico_texto = "\n[HISTÓRICO DA CONVERSA]\n"
+        for msg in historico_chat[-4:]:
+            tipo = "Estudante" if isinstance(msg, HumanMessage) else "Assistente"
+            historico_texto += f"{tipo}: {msg.content}\n"
+
+    prompt = f"""
     Prompt do sistema:
-    Você é um assistente acadêmico institucional. Sua função é responder às dúvidas dos estudantes com clareza e precisão.
+    Você é um assistente acadêmico institucional do IFSC Câmpus Caçador. Sua função é responder às dúvidas dos estudantes com clareza e precisão.
 
     Instruções:
     1. Priorize as informações do [CONTEXTO] fornecido para responder.
-    2. Você pode complementar a resposta com seu conhecimento geral apenas se for para esclarecer ou enriquecer o contexto, sem contradizê-lo.
+    2. Se a pergunta fizer referência a assuntos citados no [HISTÓRICO DA CONVERSA], mantenha a coerência com o assunto anterior.
     3. Se a informação não estiver disponível no [CONTEXTO] e você não tiver certeza absoluta, NÃO invente nada. Responda claramente que não possui essa informação e oriente o estudante a procurar a coordenação do curso.
     4. Mantenha um tom cortês, objetivo e institucional.
 
     [CONTEXTO]
     {contexto}
-
-    [PERGUNTA DO ESTUDANTE]
+    {historico_texto}
+    [PERGUNTA ATUAL DO ESTUDANTE]
     {pergunta}
     """.strip()
-
-  if modelo == "sabia-4":   
-        return client.responses.create(
-            model=modelo,
-            input=prompt,
-        )
-  else:
-        return client.chat.completions.create(
-            model=modelo,
-            messages=[
-                {
-                    "role": "user",
-                    "content": prompt
-                }
-            ]
-        )
+  
+    return client.invoke(prompt), prompt
         
 def inicializar_sistema_busca(diretorio_banco: str = "database"):
     embeddings = HuggingFaceEmbeddings(
@@ -153,28 +173,66 @@ def tratar_resposta_openrouter(pergunta, resposta_modelo, tempo_inicial, tempo_f
     salvar_resposta_banco(resposta, chunks)
     return resposta
 
-def salvar_resposta_banco(resposta, chunks):
+def tratar_resposta_modelo(pergunta, resposta_modelo, tempo_inicial, tempo_final, tempo_total, chunks, prompt):
+    usage = getattr(resposta_modelo, "usage_metadata", None) or {}
+    if not usage:
+        usage = resposta_modelo.response_metadata.get("token_usage", {})
+    token_input = usage.get("input_tokens") or usage.get("prompt_tokens") or 0
+    token_output = usage.get("output_tokens") or usage.get("completion_tokens") or 0
+    total_tokens = usage.get("total_tokens") or (token_input + token_output)
+
+    resposta = Resposta(
+            resposta_modelo.response_metadata.get("model_name"),
+            pergunta,
+            resposta_modelo.content,
+            token_input,
+            token_output,
+            total_tokens,
+            tempo_inicial,
+            tempo_final,
+            tempo_total
+        )
+
+    salvar_resposta_banco(resposta, chunks, prompt)
+
+def salvar_resposta_banco(resposta, chunks, prompt):
     with conn:
-        cursor.execute("INSERT INTO respostas (modelo, pergunta_usuario, resposta_modelo, token_input, token_output, total_tokens, tempo_inicial, tempo_final, tempo_total, chunks) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ", 
+        cursor.execute("INSERT INTO respostas (modelo, pergunta_usuario, resposta_modelo, token_input, token_output, total_tokens, tempo_inicial, tempo_final, tempo_total, chunks, prompt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ", 
             (resposta.modelo, resposta.pergunta_usuario, resposta.resposta_modelo, resposta.token_input, resposta.token_output, 
-             resposta.total_tokens, resposta.tempo_inicial, resposta.tempo_final, resposta.tempo_total, chunks))
+             resposta.total_tokens, resposta.tempo_inicial, resposta.tempo_final, resposta.tempo_total, chunks, prompt))
 
 if __name__ == "__main__":
     criar_banco_benchmark()
     modelo = escolher_modelo()
     client = criar_client(modelo)
 
+    prompt_reformulacao = reformular_pergunta()
+
     db_conectado = inicializar_sistema_busca(diretorio_banco="database")
+    recuperador = db_conectado.as_retriever(search_kwargs={"k": 5})
+
+    historico = create_history_aware_retriever(
+        llm=client,
+        retriever=recuperador,
+        prompt=prompt_reformulacao 
+    )
+
+    historico_chat = []
 
     rodar = True
     while rodar:
         pergunta = input("Digite sua pergunta: ")
 
-        if pergunta == "Sair":
+        if pergunta.lower() == "sair":
             print("Saindo...")
             rodar = False
         else:
-            chunks_encontrados = buscar_top_chunks(db_conectado, pergunta, k=5)
+           #chunks_encontrados = buscar_top_chunks(db_conectado, pergunta, k=5)
+
+            chunks_encontrados = historico.invoke({
+                "input": pergunta,
+                "chat_history": historico_chat
+            })
 
             textos_limpos = []
             for doc in chunks_encontrados:
@@ -185,14 +243,18 @@ if __name__ == "__main__":
             texto_consolidado = "\n\n".join(textos_limpos)
 
             tempo_inicial = time.perf_counter()
-            resposta_modelo = consultar_modelo(texto_consolidado, pergunta, client, modelo)
+            resposta_modelo, prompt_completo = consultar_modelo(texto_consolidado, pergunta, historico_chat, client)
             tempo_final = time.perf_counter()
 
             tempo_total = tempo_final - tempo_inicial
 
-            #print(f"Resposta do Modelo: {resposta_modelo}")
+            print(resposta_modelo)
 
-            if modelo == "sabia-4":
-                tratar_resposta_sabia(pergunta, resposta_modelo, tempo_inicial, tempo_final, tempo_total, texto_consolidado)
-            else:
-                tratar_resposta_openrouter(pergunta, resposta_modelo, tempo_inicial, tempo_final, tempo_total, texto_consolidado)
+            historico_chat.append(HumanMessage(content=pergunta))
+            historico_chat.append(AIMessage(content=resposta_modelo.content))
+
+            tratar_resposta_modelo(pergunta, resposta_modelo, tempo_inicial, tempo_final, tempo_total, texto_consolidado, prompt_completo)
+            #if modelo == "sabia-4":
+                #tratar_resposta_sabia(pergunta, resposta_modelo, tempo_inicial, tempo_final, tempo_total, texto_consolidado)
+            #else:
+                #tratar_resposta_openrouter(pergunta, resposta_modelo, tempo_inicial, tempo_final, tempo_total, texto_consolidado)
