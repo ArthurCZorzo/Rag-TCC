@@ -60,31 +60,42 @@ def escolher_modelo():
     opcao = input("\nEscolha um modelo: ")
     
     if opcao == "1":
-        return "openai/gpt-5.6-luna" #1.05 M contexto, $0.20/M input tokens, $1.20/M output tokens
+        return "openai/gpt-6.1-sol" #1.1M contexto, $2/M input tokens, $10/M output tokens
+        #return "openai/gpt-5.6-luna" #1.05 M contexto, $0.20/M input tokens, $1.20/M output tokens
     elif opcao == "2":
-        return "google/gemini-3.7-flash" #1.05 M contexto, $0.75/M input tokens, $3.75/M output tokens
+        return "google/gemini-3.8-flash" #1.0 M contexto, $0.75/M input tokens, $3.75/M output tokens
+        #return "google/gemini-3.7-flash" #1.05 M contexto, $0.75/M input tokens, $3.75/M output tokens
     elif opcao == "3":
-        return "anthropic/claude-sonnet-5" #1 M contexto, $2/M input tokens, $10/M output tokens
+        return "anthropic/claude-sonnet-5.5" #1 M contexto, $2/M input tokens, $10/M output tokens
+        #return "anthropic/claude-sonnet-5" #1 M contexto, $2/M input tokens, $10/M output tokens
     elif opcao == "4":
         return "deepseek/deepseek-v4.1-flash" #1.05 M contexto, $0.0198/M input tokens, #0.396/M output tokens
     elif opcao == "5":
         return "sabia-4"
     else:
         print("\nOpção inválida.")
-        return "openai/gpt-5.6-luna"
+        return "sabia-4"
 
 def reformular_pergunta():
     prompt_reformulacao = ChatPromptTemplate.from_messages([
         ("system", (
-            "Você é um assistente encarregado de reformular perguntas de estudantes para um sistema de busca em documentos acadêmicos.\n"
-            "Dada a conversa anterior e a última pergunta do usuário, reformule a pergunta para torná-la totalmente autônoma, "
-            "específica e autocontida.\n\n"
-            "Diretrizes:\n"
-            "- Se a pergunta contiver elipses ou pronomes (ex: 'e a carga horária?', 'onde ele dá aula?', 'qual a sala?'), "
-            "identifique o sujeito da conversa anterior (disciplina, professor, edital, fase) e inclua-o explicitamente na pergunta reformulada.\n"
-            "- Exemplo: se o histórico fala sobre 'Algoritmos e Programação II' e o usuário pergunta 'e a carga horaria?', "
-            "reformule para: 'Qual é a carga horária da disciplina de Algoritmos e Programação II?'.\n"
-            "- NÃO responda à pergunta, retorne APENAS a pergunta reformulada."
+            "Você é um especialista em busca acadêmica para o curso de Bacharelado em Sistemas de Informação do IFSC Câmpus Caçador.\n"
+            "Sua tarefa é reescrever a pergunta do estudante para torná-la formal, específica, clara e perfeitamente alinhada à terminologia oficial dos documentos institucionais.\n\n"
+            "--- GLOSSÁRIO INSTITUCIONAL DO IFSC CAÇADOR ---\n"
+            "Traduza a linguagem coloquial do estudante para os termos oficiais correspondentes nos documentos:\n"
+            "• 'rematrícula' / 'rematricula' / 'renovar matrícula' / 'fazer matrícula' / 'escolher matérias' -> 'renovação de matrícula ou ajuste de matrícula online no SIGAA / Registro Acadêmico'\n"
+            "• 'horas complementares' / 'horas extras' / 'validar certificados' / 'atividades extras' -> 'validação de atividades complementares / requerimento de atividades complementares'\n"
+            "• 'matérias' / 'disciplinas' / 'grade' -> 'unidades curriculares ou componentes curriculares da matriz curricular do PPC'\n"
+            "• 'TCC' / 'monografia' / 'defesa de tcc' -> 'Trabalho de Conclusão de Curso (TCC I e TCC II) / Regulamento de TCC'\n"
+            "• 'trancar o curso' / 'trancamento' / 'cancelar curso' -> 'trancamento de matrícula ou cancelamento de matrícula conforme o RDP'\n"
+            "• 'faltas' / 'quantas faltas posso ter' / 'reprovação por falta' / 'presença' -> 'frequência mínima de 75% e assiduidade conforme o RDP (Regulamento Didático-Pedagógico)'\n"
+            "• 'bolsas' / 'auxílio financeiro' / 'almoço/refeição' -> 'programa de assistência estudantil (PAE) / auxílio permanência'\n"
+            "• 'livros' / 'biblioteca' / 'multa de livro' -> 'empréstimo, renovação e devolução no sistema de bibliotecas do IFSC'\n\n"
+            "--- REGRAS DE REFORMULAÇÃO ---\n"
+            "1. Resolução de Histórico: se a pergunta fizer referência à conversa anterior (pronomes ou elipses como 'e a carga horária?', 'onde ele dá aula?', 'qual a sala?'), recupere o sujeito do histórico (disciplina, professor, edital, fase) e torne a pergunta autocontida.\n"
+            "2. Normalização e Enriquecimento: substitua termos informais pelos termos oficiais do glossário para maximizar a recuperação em banco vetorial de documentos.\n"
+            "3. Correção gramatical: corrija erros ortográficos e de pontuação da pergunta original.\n"
+            "4. NÃO responda à pergunta. Retorne APENAS o texto da pergunta reformulada."
         )),
         MessagesPlaceholder("chat_history"),
         ("human", "{input}"),
@@ -107,7 +118,7 @@ def consultar_modelo(contexto, pergunta, historico_chat, client):
     Instruções:
     1. Priorize as informações do [CONTEXTO] fornecido para responder.
     2. Se a pergunta fizer referência a assuntos citados no [HISTÓRICO DA CONVERSA], mantenha a coerência com o assunto anterior.
-    3. Se a informação não estiver disponível no [CONTEXTO] e você não tiver certeza absoluta, NÃO invente nada. Responda claramente que não possui essa informação e oriente o estudante a procurar a coordenação do curso.
+    3. Se a informação não estiver disponível no [CONTEXTO] e você não tiver certeza absoluta, NÃO invente nada. Responda claramente que não possui essa informação e oriente o estudante a procurar a coordenação do curso, faça uma resposta curta.
     4. Mantenha um tom cortês, objetivo e institucional.
 
     [CONTEXTO]
@@ -193,7 +204,7 @@ def tratar_resposta_modelo(pergunta, resposta_modelo, tempo_inicial, tempo_final
             tempo_total
         )
 
-    salvar_resposta_banco(resposta, chunks, prompt)
+    #salvar_resposta_banco(resposta, chunks, prompt)
 
 def salvar_resposta_banco(resposta, chunks, prompt):
     with conn:
