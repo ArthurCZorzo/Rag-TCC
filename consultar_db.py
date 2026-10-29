@@ -85,12 +85,14 @@ def reformular_pergunta():
             "Traduza a linguagem coloquial do estudante para os termos oficiais correspondentes nos documentos:\n"
             "• 'rematrícula' / 'rematricula' / 'renovar matrícula' / 'fazer matrícula' / 'escolher matérias' -> 'renovação de matrícula ou ajuste de matrícula online no SIGAA / Registro Acadêmico'\n"
             "• 'horas complementares' / 'horas extras' / 'validar certificados' / 'atividades extras' -> 'validação de atividades complementares / requerimento de atividades complementares'\n"
-            "• 'matérias' / 'disciplinas' / 'grade' -> 'unidades curriculares ou componentes curriculares da matriz curricular do PPC'\n"
+            "• 'matérias' / 'disciplinas' / 'grade' -> 'unidades curriculares ou componentes curriculares'\n"
+            "• 'fase' / 'fases' / 'período' -> 'fase / semestre letivo'\n"
             "• 'TCC' / 'monografia' / 'defesa de tcc' -> 'Trabalho de Conclusão de Curso (TCC I e TCC II) / Regulamento de TCC'\n"
             "• 'trancar o curso' / 'trancamento' / 'cancelar curso' -> 'trancamento de matrícula ou cancelamento de matrícula conforme o RDP'\n"
             "• 'faltas' / 'quantas faltas posso ter' / 'reprovação por falta' / 'presença' -> 'frequência mínima de 75% e assiduidade conforme o RDP (Regulamento Didático-Pedagógico)'\n"
             "• 'bolsas' / 'auxílio financeiro' / 'almoço/refeição' -> 'programa de assistência estudantil (PAE) / auxílio permanência'\n"
             "• 'livros' / 'biblioteca' / 'multa de livro' -> 'empréstimo, renovação e devolução no sistema de bibliotecas do IFSC'\n\n"
+            "• 'carga horária' / 'quantas horas' / 'ch' / 'ch total' / 'ch ead' -> 'carga horária total (CH Total / CH EAD)'\n"
             "--- REGRAS DE REFORMULAÇÃO ---\n"
             "1. Resolução de Histórico: se a pergunta fizer referência à conversa anterior (pronomes ou elipses como 'e a carga horária?', 'onde ele dá aula?', 'qual a sala?'), recupere o sujeito do histórico (disciplina, professor, edital, fase) e torne a pergunta autocontida.\n"
             "2. Normalização e Enriquecimento: substitua termos informais pelos termos oficiais do glossário para maximizar a recuperação em banco vetorial de documentos.\n"
@@ -220,7 +222,7 @@ if __name__ == "__main__":
     prompt_reformulacao = reformular_pergunta()
 
     db_conectado = inicializar_sistema_busca(diretorio_banco="database")
-    recuperador = db_conectado.as_retriever(search_kwargs={"k": 5})
+    recuperador = db_conectado.as_retriever(search_kwargs={"k": 8})
 
     historico = create_history_aware_retriever(
         llm=client,
@@ -246,10 +248,13 @@ if __name__ == "__main__":
             })
 
             textos_limpos = []
+            textos_vistos = set()
             for doc in chunks_encontrados:
                 texto_sem_quebras = doc.page_content.replace("\n", " ")
                 texto_ajustado = " ".join(texto_sem_quebras.split())
-                textos_limpos.append(texto_ajustado)
+                if texto_ajustado not in textos_vistos:
+                    textos_vistos.add(texto_ajustado)
+                    textos_limpos.append(texto_ajustado)
 
             texto_consolidado = "\n\n".join(textos_limpos)
 

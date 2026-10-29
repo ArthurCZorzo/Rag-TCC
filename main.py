@@ -28,7 +28,7 @@ class Rag:
 
     def configurar(self, prompt_reformulacao, db_conectado):
         print("\nInicializando banco vetorial e retriever...")
-        recuperador_base = db_conectado.as_retriever(search_kwargs={"k": 5})
+        recuperador_base = db_conectado.as_retriever(search_kwargs={"k": 8})
 
         self.retriever = create_history_aware_retriever(
             llm=self.client,
@@ -43,10 +43,13 @@ class Rag:
             "chat_history": historico_chat
         })
         
-        textos_limpos = [
-            " ".join(doc.page_content.replace("\n", " ").split())
-            for doc in chunks_encontrados
-        ]
+        textos_limpos = []
+        textos_vistos = set()
+        for doc in chunks_encontrados:
+            texto_ajustado = " ".join(doc.page_content.replace("\n", " ").split())
+            if texto_ajustado not in textos_vistos:
+                textos_vistos.add(texto_ajustado)
+                textos_limpos.append(texto_ajustado)
         texto_consolidado = "\n\n".join(textos_limpos)
 
         #print(f"CONTEXTO: {texto_consolidado}") 
