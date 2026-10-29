@@ -43,74 +43,14 @@ def salvar_chunks_em_arquivo(chunks, caminho_arquivo):
 def verificar_markdown(arquivo):
     return arquivo.endswith("md")
 
-def reestruturar_tabela_matriz_curricular(texto: str) -> str:
-    """
-    Divide a grande tabela de Componentes Curriculares Obrigatórios por Fase/Semestre,
-    repetindo o cabeçalho completo em cada bloco e adicionando cabeçalho H3 explícito.
-    Isso garante que cada fase gere chunks fechados e com semântica completa.
-    """
-    padrao = r'(## Componentes curriculares obrigatórios\s*\n\n\|[^\n]+\|\n\|[-| ]+\|\n)([\s\S]*?)(?=\n## |\Z)'
-    match = re.search(padrao, texto)
-    if not match:
-        return texto
-    
-    cabecalho_base = match.group(1).strip()
-    corpo_tabela = match.group(2).strip()
-    
-    linhas_header = cabecalho_base.split('\n')
-    header_colunas = linhas_header[1]
-    header_separador = linhas_header[2]
-    
-    fases = {}
-    fases_ordem = []
-    
-    for line in corpo_tabela.split('\n'):
-        line_clean = line.strip()
-        if not line_clean.startswith('|'):
-            continue
-        parts = [p.strip() for p in line_clean.split('|')]
-        if len(parts) >= 3 and parts[2].isdigit():
-            fase_num = int(parts[2])
-            if fase_num not in fases:
-                fases[fase_num] = []
-                fases_ordem.append(fase_num)
-            fases[fase_num].append(line_clean)
-        else:
-            if 999 not in fases:
-                fases[999] = []
-                fases_ordem.append(999)
-            fases[999].append(line_clean)
-            
-    nova_secao = "## Componentes curriculares obrigatórios por Fase (Matriz Curricular)\n\n"
-    for f in fases_ordem:
-        if f != 999:
-            nova_secao += f"### Matriz Curricular - {f}ª Fase ({f}º Semestre) - Componentes Curriculares Obrigatórios\n\n"
-            nova_secao += f"{header_colunas}\n{header_separador}\n"
-            for row in fases[f]:
-                nova_secao += f"{row}\n"
-            nova_secao += "\n"
-        else:
-            nova_secao += "### Resumo da Carga Horária dos Componentes Curriculares Obrigatórios\n\n"
-            nova_secao += f"{header_colunas}\n{header_separador}\n"
-            for row in fases[f]:
-                nova_secao += f"{row}\n"
-            nova_secao += "\n"
-            
-    texto_atualizado = texto[:match.start()] + nova_secao + texto[match.end():]
-    return texto_atualizado
-
 def normalizar_headers_markdown(texto: str) -> str:
     """ 
-    1. Reestrutura a matriz curricular geral por Fase/Semestre preservando o cabeçalho da tabela.
-    2. Rebaixa as subseções de ementa (Objetivos, Conteúdos, Metodologia, Bibliografia) para nível ### 
+    1. Rebaixa as subseções de ementa (Objetivos, Conteúdos, Metodologia, Bibliografia) para nível ### 
        para que herdem o contexto de ## Disciplina: NOME no MarkdownHeaderTextSplitter.
-    3. Transforma itens numerados de seções (ex: '- 23.Objetivos do curso:') em cabeçalhos (## 23. Objetivos do curso:)
-    4. Transforma a linha de início de tabela de disciplina em um cabeçalho oficial do Markdown (## Disciplina: NOME)
+    2. Transforma itens numerados de seções (ex: '- 23.Objetivos do curso:') em cabeçalhos (## 23. Objetivos do curso:)
+    3. Transforma a linha de início de tabela de disciplina em um cabeçalho oficial do Markdown (## Disciplina: NOME)
     """
-    # 1. Reestrutura tabela geral de disciplinas da matriz curricular
-    texto = reestruturar_tabela_matriz_curricular(texto)
-
-    # 2. Transforma subseções de ementa de disciplinas em nível 3 (###)
+    # 1. Transforma subseções de ementa de disciplinas em nível 3 (###)
     subsecoes = [
         'Objetivos:', 'Conteúdos:', 'Metodologia de Abordagem:', 
         'Metodologia de abordagem:', 'Bibliografia Básica:', 
@@ -121,10 +61,10 @@ def normalizar_headers_markdown(texto: str) -> str:
     padrao_subsecoes = r'^(?:-\s*)?##?\s*(' + escaped_subsecoes + r')'
     texto = re.sub(padrao_subsecoes, r'### \1', texto, flags=re.MULTILINE)
 
-    # 3. Transforma linhas como '- 23.Objetivos do curso:' em '## 23. Objetivos do curso:'
+    # 2. Transforma linhas como '- 23.Objetivos do curso:' em '## 23. Objetivos do curso:'
     texto = re.sub(r'^(?:-\s*)?(\d{1,2}\.\s*[A-ZÀ-Ú].*?:)', r'## \1', texto, flags=re.MULTILINE)
     
-    # 4. Transforma '| Unidade Curricular / Disciplina: Algoritmos e Programação I | ... |'
+    # 3. Transforma '| Unidade Curricular / Disciplina: Algoritmos e Programação I | ... |'
     # em '## Disciplina: Algoritmos e Programação I\n| Unidade Curricular / Disciplina: ...'
     def converter_tabela_disciplina(match):
         nome_disciplina = match.group(1).strip()
